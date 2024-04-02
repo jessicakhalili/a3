@@ -31,84 +31,12 @@ struct client {
 static int searchmatch(struct client *p);
 static void movetoend(int fd);
 // static struct client *addclient(int fd, struct in_addr addr);
-static struct client *removeclient(int fd);
+void removeclient(int fd);
 static void broadcast(struct client *first, char *s, int size);
 // int handleclient(struct client *p, struct client *first);
 
 
 int bindandlisten(void);
-
-
-int main(void) {
-    int clientfd, maxfd, nready;
-    struct client *p;
-    struct client *first = NULL;
-    socklen_t len;
-    struct sockaddr_in q;
-    fd_set allset;
-    fd_set rset;
-
-    int i;
-
-
-    srand((unsigned int)time(NULL)); //seed rand()
-
-
-    int listenfd = bindandlisten();
-    // initialize allset and add listenfd to the
-    // set of file descriptors passed into select
-    FD_ZERO(&allset);
-    FD_SET(listenfd, &allset);
-    // maxfd identifies how far into the set to search
-    maxfd = listenfd;
-
-    while (1) {
-        // make a copy of the set before we pass it into select
-        rset = allset;
-
-        nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
-
-        if (nready == -1) {
-            perror("select");
-            continue;
-        }
-
-        if (FD_ISSET(listenfd, &rset)){ //client wants to connect to server
-            len = sizeof(q);
-            if ((clientfd = accept(listenfd, (struct sockaddr *)&q, &len)) < 0) {
-                perror("accept");
-                exit(1);
-            }
-
-            FD_SET(clientfd, &allset);
-            if (clientfd > maxfd) {
-                maxfd = clientfd;
-            }
-            addclient(head, clientfd, q.sin_addr);
-            char *namemsg = "What is your name?\r\n"; 
-            write(clientfd, namemsg, strlen(namemsg)); //Add client, print name message, and set client state to 0. 
-        }
-
-        for(i = 0; i <= maxfd; i++) {
-            if (FD_ISSET(i, &rset)) { 
-                for (p = first; p != NULL; p = p->next) {
-                    if (p->fd == i) {
-                        int result = handleclient(p);  //all actions from the client will be taken care of in handle client function.
-                        if (result == -1) {  // if client closed, remove from client list and fd_set.
-                            int tmp_fd = p->fd;
-                            removeclient(head, p->fd);
-                            FD_CLR(tmp_fd, &allset);
-                            close(tmp_fd);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    return 0;
-}
-
 
 int handleclient(struct client *p) {
     char buf[256]; // Buffer to store input from the client.
@@ -119,7 +47,7 @@ int handleclient(struct client *p) {
       buf[len] = '\0'; // Null-terminate the received input and make it a valid C string.
 
       if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent | If the 'say' flag is set (indicating the client is in a "speak" state)...
-          write(p->opponent, buf, strlen(buf)); // Send received message directly to the opponent.
+          write(p->opponent->fd, buf, strlen(buf)); // Send received message directly to the opponent.
           p->say = 0; // Reset the 'say' flag.
           return 1; // Exit the function, indicating success. 
       }
@@ -158,8 +86,8 @@ int handleclient(struct client *p) {
             sprintf(outbuf, "%s hits you for %d damage!\nYou are no match for %s. You scurry away...\n\nAwaiting next opponent...\n\r\n", p->name, r, p->name);
             write(t->fd, outbuf, strlen(outbuf));
             // set previously matched opponents
-            p->prev = t;
-            t->prev = p;
+            p->prev = t->fd;
+            t->prev = p->fd;
             //send them to end of client list
             movetoend(t->fd);
             movetoend(p->fd);
@@ -207,6 +135,7 @@ int handleclient(struct client *p) {
         }
         return -1;
     } 
+    return 0;
 }
 
  /* bind and listen, abort on error
@@ -254,9 +183,9 @@ static void addclient(int fd, struct in_addr addr) {
     p->ipaddr = addr;
     p->next = NULL;
     p->state = 0;
-    p->hp = NULL;
-    p->powermove = NULL;
-    p->prev = NULL;
+    p->hp = 0;
+    p->powermove = 0;
+    p->prev = 0;
     p->opponent = NULL;
     p->say = 0;
 
@@ -307,10 +236,10 @@ static void movetoend(int fd) {
     }
 
     if (*p) {
-        p->state = 1;  //match is over, reset some attributes
-        p->hp = NULL;
-        p->powermove = NULL;
-        p->opponent = NULL;
+        (*p)->state = 1;  //match is over, reset some attributes
+        (*p)->hp = 0;
+        (*p)->powermove = 0;
+        (*p)->opponent = NULL;
         if (p == &first) { //if fd is first position (special case)
           
           struct client **p2;
@@ -324,8 +253,8 @@ static void movetoend(int fd) {
           else { //else, update the variable first and perform the task.
             first = &(*p)->next;
           struct client *t = *p;
-          (*t)->next = (*prev2)->next;
-          (*prev2)->next = *t;
+          t->next = (*prev2)->next;
+          (*prev2)->next = t;
           }
         }
         else {  //for all other cases (including the case of 2 clients in list with fd being the second), perform the task.
@@ -337,8 +266,8 @@ static void movetoend(int fd) {
           for (p2 = &first; *p2; p2 = &(*p2)->next) {
             prev2 = p2;
           }
-          (*t)->next = (*prev2)->next;
-          (*prev2)->next = *t;
+          t->next = (*prev2)->next;
+          (*prev2)->next = t;
         }
     } 
     else {
@@ -400,4 +329,74 @@ static void broadcast(struct client *first, char *s, int size) {
         write(p->fd, s, size);
     }
     /* should probably check write() return value and perhaps remove client */
+}
+
+int main(void) {
+    int clientfd, maxfd, nready;
+    struct client *p;
+    struct client *first = NULL;
+    socklen_t len;
+    struct sockaddr_in q;
+    fd_set allset;
+    fd_set rset;
+
+    int i;
+
+
+    srand((unsigned int)time(NULL)); //seed rand()
+
+
+    int listenfd = bindandlisten();
+    // initialize allset and add listenfd to the
+    // set of file descriptors passed into select
+    FD_ZERO(&allset);
+    FD_SET(listenfd, &allset);
+    // maxfd identifies how far into the set to search
+    maxfd = listenfd;
+
+    while (1) {
+        // make a copy of the set before we pass it into select
+        rset = allset;
+
+        nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
+
+        if (nready == -1) {
+            perror("select");
+            continue;
+        }
+
+        if (FD_ISSET(listenfd, &rset)){ //client wants to connect to server
+            len = sizeof(q);
+            if ((clientfd = accept(listenfd, (struct sockaddr *)&q, &len)) < 0) {
+                perror("accept");
+                exit(1);
+            }
+
+            FD_SET(clientfd, &allset);
+            if (clientfd > maxfd) {
+                maxfd = clientfd;
+            }
+            addclient(clientfd, q.sin_addr);
+            char *namemsg = "What is your name?\r\n"; 
+            write(clientfd, namemsg, strlen(namemsg)); //Add client, print name message, and set client state to 0. 
+        }
+
+        for(i = 0; i <= maxfd; i++) {
+            if (FD_ISSET(i, &rset)) { 
+                for (p = first; p != NULL; p = p->next) {
+                    if (p->fd == i) {
+                        int result = handleclient(p);  //all actions from the client will be taken care of in handle client function.
+                        if (result == -1) {  // if client closed, remove from client list and fd_set.
+                            int tmp_fd = p->fd;
+                            removeclient(p->fd);
+                            FD_CLR(tmp_fd, &allset);
+                            close(tmp_fd);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
 }
