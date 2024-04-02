@@ -20,7 +20,7 @@ struct client {
   struct in_addr ipaddr;
   struct client *next;
   int state; //0:waiting name 1:name typed, waiting match 2:non-active 3:active
-  *char name;
+  char* name;
   int hp;
   int powermove;
   int prev;
@@ -30,10 +30,10 @@ struct client {
 
 static int searchmatch(struct client *p);
 static void movetoend(int fd);
-static struct client *addclient(int fd, struct in_addr addr);
+// static struct client *addclient(int fd, struct in_addr addr);
 static struct client *removeclient(int fd);
 static void broadcast(struct client *first, char *s, int size);
-int handleclient(struct client *p, struct client *first);
+// int handleclient(struct client *p, struct client *first);
 
 
 int bindandlisten(void);
@@ -111,28 +111,29 @@ int main(void) {
 
 
 int handleclient(struct client *p) {
-    char buf[256];
-    char outbuf[512];
-    int len = read(p->fd, buf, sizeof(buf) - 1);
-    if (len > 0) {
+    char buf[256]; // Buffer to store input from the client.
+    char outbuf[512]; // Buffer to construct output messages to be sent to clients.
+    int len = read(p->fd, buf, sizeof(buf) - 1); // Read input from the client's socket into buf, limiting read size to one less than buffer size to leave space for null terminator.
+ 
+    if (len > 0) { // If the read is successful and data is received:
+      buf[len] = '\0'; // Null-terminate the received input and make it a valid C string.
 
-
-      if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent
-          write(p->opponent, buf, strlen(buf));
-          p->say = 0;
-          return 1;
+      if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent | If the 'say' flag is set (indicating the client is in a "speak" state)...
+          write(p->opponent, buf, strlen(buf)); // Send received message directly to the opponent.
+          p->say = 0; // Reset the 'say' flag.
+          return 1; // Exit the function, indicating success. 
       }
 
 
 
       if ((p->state) == 0) {  //if this client hasnt typed name yet, input becomes name and change state to 1. Open a match if possible.
-        p->name = buf;
+        p->name = strdup(buf); // Copies buffer's contents to a new memory location that doesn't get overwritten 
         p->state = 1;
         sprintf(outbuf, "Welcome, %s! Awaiting opponent...\r\n", p->name);
         write(p->fd, outbuf, strlen(outbuf));
         
         sprintf(outbuf, "**%s enters the arena**\r\n", p->name); //print msg to all clients
-        broadcast(first, outbuf, strlen(outbuf))
+        broadcast(first, outbuf, strlen(outbuf));
 
         searchmatch(p);
         return 1;
@@ -145,7 +146,7 @@ int handleclient(struct client *p) {
       }
       else if ((p->state) == 3) {  //this client is in a battle, in offense, perform the action.
         struct client *t = p->opponent;
-        if (strcmp(buf, "a")) {
+        if (strcmp(buf, "a") == 0) { // strcmp returns 0 if the strings are equal
           int r = 2 + rand() % 5;
           t->hp -= r;
 
@@ -267,37 +268,33 @@ static void addclient(int fd, struct in_addr addr) {
     (*prev2)->next = p;
 }
 
-static void client *removeclient(int fd) {
-    struct client **p;
+void removeclient(int fd) {
+    struct client **p; // pointer to pointer for traversal and modification.
 
-    for (p = &first; *p && (*p)->fd != fd; p = &(*p)->next)
-        ;
+    // loop through the list to find the client with the matching file descriptor.
+    for (p = &first; *p && (*p)->fd != fd; p = &(*p)->next);
+
+    // check if the client was found.
     if (*p) {
-        if (p == &first) { //if fd is first position (special case)
-          
-          struct client **p2;
-          struct client **prev2;
-          for (p2 = &first; *p2; p2 = &(*p2)->next) {
-            prev2 = p2;
-          }
-          if (prev2 == p) { //if fd is the one and only client in the list, remove and update first to NULL.
-            free(*p);
-            first = NULL;
-          }
-          else { //else, update first and perform task.
-            first = &(*p)->next;
-            free(*p);
-          }
+        // special case handling is not required for the first element, it's covered by general logic.
+        struct client *temp = *p; // temporarily store the pointer to the client to be removed.
+
+        // logging the removal action.
+        printf("Removing client %d %s\n", fd, inet_ntoa(temp->ipaddr));
+
+        // advance the pointer to remove the current client from the list.
+        *p = temp->next;
+
+        // free the removed client's dynamically allocated name, if applicable.
+        if (temp->name) {
+            free(temp->name);
         }
-        else {
-          struct client *t = (*p)->next;
-          printf("Removing client %d %s\n", fd, inet_ntoa((*p)->ipaddr));
-          free(*p);
-          *p = t;
-        }
+
+        // finally, free the client struct itself.
+        free(temp);
     } else {
-        fprintf(stderr, "Trying to remove fd %d, but I don't know about it\n",
-                 fd);
+        // if the client with the specified file descriptor was not found in the list.
+        fprintf(stderr, "Trying to remove fd %d, but I don't know about it\n", fd);
     }
 }
 
