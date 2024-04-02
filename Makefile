@@ -1,28 +1,26 @@
-# Default port number for now; override this by calling `make PORT=<number>`
-PORT=30100
+# Makefile for compiling battle.c
+CC = gcc
+CFLAGS = -Wall -g
+LDFLAGS =
+PORT = 58833
 
-# Compiler flags
-CFLAGS= -DPORT=$(PORT) -g -Wall
-
-# The compiler to use
-CC=gcc
-
-# Target executable name
+# Executable file name
 TARGET=battle
 
-# Object files to build
-OBJS=battle.o
+# Source and object files
+SRC = battle.c
+OBJ = $(SRC:.c=.o)
 
-# Compile the battle server
-$(TARGET): $(OBJS)
-    $(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
+# Rule to make target
+$(TARGET): $(OBJ)
+    $(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(LDFLAGS)
 
-# Compile battle.c to an object file
-battle.o: battle.c
-    $(CC) $(CFLAGS) -c battle.c
+# Rule for object files
+%.o: %.c
+    $(CC) $(CFLAGS) -DPORT=$(PORT) -c $< -o $@
 
-# Clean up compiled files
+# Clean files
 clean:
-    rm -f $(TARGET) $(OBJS)
+    rm -f $(TARGET) $(OBJ)
 
 .PHONY: clean
