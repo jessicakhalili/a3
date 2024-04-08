@@ -40,6 +40,43 @@ int bindandlisten(void);
 
 struct client *first = NULL;
 
+void instructions(struct client *p, int r){ // A helper function that takes care of print instructions
+	  char outbuf[512];
+	  struct client *t = p->opponent;
+          sprintf(outbuf, "You hit %s for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", t->name, r, p->hp, p ->powermove, t->name, t->hp, t->name);
+          write(p->fd, outbuf, strlen(outbuf));
+          if (t->powermove > 0) {
+            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name,
+             p->hp);
+            write(t->fd, outbuf, strlen(outbuf));
+          }
+          else if (t->powermove == 0) {
+            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name, p->hp);
+            write(t->fd, outbuf, strlen(outbuf));
+          }
+          p->state = 2;
+          t->state = 3;
+}
+
+void endofmatch(struct client *p, int r){ // A helper function that takes care of the end of match cleanup
+	char outbuf[512];
+	struct client *t = p->opponent;
+	//print end message
+	sprintf(outbuf, "You hit %s for %d damage!\n%s gives up. You win!\n\nAwaiting next opponent...\n\r\n", t->name, r, t->name);
+	write(p->fd, outbuf, strlen(outbuf));
+
+        sprintf(outbuf, "%s hits you for %d damage!\nYou are no match for %s. You scurry away...\n\nAwaiting next opponent...\n\r\n", p->name, r, p->name);
+        write(t->fd, outbuf, strlen(outbuf));
+        // set previously matched opponents
+        p->prev = t->fd;
+        t->prev = p->fd;
+        //send them to end of client list
+        movetoend(t->fd);
+        movetoend(p->fd);
+        searchmatch(t);
+        searchmatch(p);
+}
+
 int handleclient(struct client *p) {
     char buf[256]; // Buffer to store input from the client.
     char outbuf[512]; // Buffer to construct output messages to be sent to clients.
@@ -61,17 +98,14 @@ int handleclient(struct client *p) {
         p->state = 1;
         sprintf(outbuf, "Welcome, %s! Awaiting opponent...\r\n", p->name);
         write(p->fd, outbuf, strlen(outbuf));
-        
+
         sprintf(outbuf, "**%s enters the arena**\r\n", p->name); //print msg to all clients
         broadcast(first, outbuf, strlen(outbuf));
 
         searchmatch(p);
         return 1;
       }
-      else if ((p->state) == 1) {  //this client is waiting for a match, all inputs will be ignored.
-        return 1;
-      }
-      else if ((p->state) == 2) {  //this client is in a battle, in defense, all inputs will be ignored.
+      else if ((p->state) == 1 || (p->state) == 2) {  //this client is waiting for a match or in defense, all inputs will be ignored.
         return 1;
       }
       else if ((p->state) == 3) {  //this client is in a battle, in offense, perform the action.
@@ -81,45 +115,34 @@ int handleclient(struct client *p) {
           t->hp -= r;
 
           if (t->hp <= 0) {
-            //print end message
-            sprintf(outbuf, "You hit %s for %d damage!\n%s gives up. You win!\n\nAwaiting next opponent...\n\r\n", t->name, r, t->name);
-            write(p->fd, outbuf, strlen(outbuf));
-
-            sprintf(outbuf, "%s hits you for %d damage!\nYou are no match for %s. You scurry away...\n\nAwaiting next opponent...\n\r\n", p->name, r, p->name);
-            write(t->fd, outbuf, strlen(outbuf));
-            // set previously matched opponents
-            p->prev = t->fd;
-            t->prev = p->fd;
-            //send them to end of client list
-            movetoend(t->fd);
-            movetoend(p->fd);
-            searchmatch(t);
-            searchmatch(p);
+	    endofmatch(p, r);
             return 1;
           }
 
           //battle continues
-          sprintf(outbuf, "You hit %s for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for abc to strike...\r\n", t->name, r, p->hp, p ->powermove, t->name, t->hp);
-          write(p->fd, outbuf, strlen(outbuf));
-          
-          if (t->powermove > 0) {
-            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name,
-             p->hp);
-            write(t->fd, outbuf, strlen(outbuf));
-          }
-          else if (t->powermove == 0) {
-            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name, p->hp);
-            write(t->fd, outbuf, strlen(outbuf));
-          }
-          p->state = 2;
-          t->state = 3;
+	  instructions(p, r);
           return 1; 
         }
-        else if (strcmp(buf, "p")) {
-          //if p == 0 ignore, else carry out the action, hit rate 50%, dmg = (2~6) * 3, if hp drops to 0 perform line 145-161
-
+        else if (strcmp(buf, "p") == 0) {
+          //if powermove == 0 ignore, else carry out the action, hit rate 50%, dmg = (2~6) * 3, if hp drops to 0 end match
+		if ((p->powermove) > 0) {
+			p->powermove -= 1;
+			if (rand() % 2) {
+				int dmg = 3 * (2 + rand() % 5);
+				t->hp -= dmg;
+				if (t->hp <= 0) {
+					endofmatch(p, dmg);
+					return 1;
+				}
+				instructions(p, dmg);
+				return 1;
+			}
+			// if missed send 0 as the damage
+			instructions(p, 0);
+			return 1;
+		}
         }
-        else if (strcmp(buf, "s")) {
+        else if (strcmp(buf, "s") == 0) {
           //set say flag to 1.  
           p->say = 1;
           return 1;
@@ -301,7 +324,7 @@ static int searchmatch(struct client *p) {
                   sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p1->name, p->hp, p->powermove, p1->name, p1->hp);
                   write(p->fd, outbuf, strlen(outbuf));
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for abc to strike...\r\n", p->name, p1->hp, p1 ->powermove, p->name, p->hp);
+                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p->name, p1->hp, p1 ->powermove, p->name, p->hp, p->name);
                   write(p1->fd, outbuf, strlen(outbuf));
                   return 1;
                 }
@@ -318,7 +341,7 @@ static int searchmatch(struct client *p) {
                   sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p->name, p1->hp, p1->powermove, p->name, p->hp);
                   write(p1->fd, outbuf, strlen(outbuf));
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for abc to strike...\r\n", p1->name, p->hp, p ->powermove, p1->name, p1->hp);
+                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p1->name, p->hp, p ->powermove, p1->name, p1->hp, p1->name);
                   write(p->fd, outbuf, strlen(outbuf));
                   return 1;
                 }
@@ -382,8 +405,8 @@ int main(void) {
                 maxfd = clientfd;
             }
             addclient(clientfd, q.sin_addr);
-            char *namemsg = "What is your name?\r\n"; 
-            write(clientfd, namemsg, strlen(namemsg)); //Add client, print name message, and set client state to 0. 
+            char *namemsg = "What is your name?\r\n";
+            write(clientfd, namemsg, strlen(namemsg)); //Add client, print name message, and set client state to 0.
         }
 
         for(i = 0; i <= maxfd; i++) {
