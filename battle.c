@@ -38,6 +38,8 @@ static void broadcast(struct client *first, char *s, int size);
 
 int bindandlisten(void);
 
+struct client *first = NULL;
+
 int handleclient(struct client *p) {
     char buf[256]; // Buffer to store input from the client.
     char outbuf[512]; // Buffer to construct output messages to be sent to clients.
@@ -189,6 +191,11 @@ static void addclient(int fd, struct in_addr addr) {
     p->opponent = NULL;
     p->say = 0;
 
+    if (first == NULL) {
+	first = p;
+	return;
+    }
+
     struct client **p2;
     struct client **prev2;
     for (p2 = &first; *p2; p2 = &(*p2)->next) {
@@ -246,15 +253,13 @@ static void movetoend(int fd) {
           struct client **prev2;
           for (p2 = &first; *p2; p2 = &(*p2)->next) {
             prev2 = p2;
-          }
-          if (prev2 == p) { //if fd is the one and only client in the list, do nothing.
-            break;
-          }
-          else { //else, update the variable first and perform the task.
-            first = &(*p)->next;
-          struct client *t = *p;
-          t->next = (*prev2)->next;
-          (*prev2)->next = t;
+	  }
+	  if (prev2 != p) { //if fd is the one and only client in the list, do nothing.
+       	  //else, update the variable first and perform the task.
+            first = (*p)->next;
+            struct client *t = *p;
+            t->next = (*prev2)->next;
+            (*prev2)->next = t;
           }
         }
         else {  //for all other cases (including the case of 2 clients in list with fd being the second), perform the task.
@@ -277,6 +282,7 @@ static void movetoend(int fd) {
 }
 
 static int searchmatch(struct client *p) {
+  char outbuf[512];
   struct client *p1;
         for (p1 = first; p1 != NULL; p1 = p1->next) {  //search if theres available client for match
           if ((p1->state) == 1) {
@@ -334,7 +340,6 @@ static void broadcast(struct client *first, char *s, int size) {
 int main(void) {
     int clientfd, maxfd, nready;
     struct client *p;
-    struct client *first = NULL;
     socklen_t len;
     struct sockaddr_in q;
     fd_set allset;
