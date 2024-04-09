@@ -38,34 +38,50 @@ static void broadcast(struct client *first, char *s, int size);
 
 int bindandlisten(void);
 
+// Global Variables, fix names carefully
 struct client *first = NULL;
+char canonbuf[64] = ""; // Buffer for commands that require canonical mode
 
-void instructions(struct client *p, int r){ // A helper function that takes care of print instructions
+void damagemessage(struct client *p, int r){ // A helper function that takes care of damage instructions
+	char outbuf[512];
+	struct client *t = p->opponent;
+	// Message the opponent
+	sprintf(outbuf, "\nYou hit %s for %d damage!\n", t->name, r);
+	write(p->fd, outbuf, strlen(outbuf));
+	// Message the client
+	sprintf(outbuf, "%s hits you for %d damage!\n", p->name, r);
+	write(t->fd, outbuf, strlen(outbuf));
+}
+
+void instructions(struct client *p, int switchrole){ // A helper function that takes care of print instructions
 	  char outbuf[512];
 	  struct client *t = p->opponent;
-          sprintf(outbuf, "You hit %s for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", t->name, r, p->hp, p ->powermove, t->name, t->hp, t->name);
+          sprintf(outbuf, "Your hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p->hp, p ->powermove, t->name, t->hp, t->name);
           write(p->fd, outbuf, strlen(outbuf));
           if (t->powermove > 0) {
-            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name,
+            sprintf(outbuf, "Your hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", t->hp, t->powermove, p->name,
              p->hp);
             write(t->fd, outbuf, strlen(outbuf));
           }
           else if (t->powermove == 0) {
-            sprintf(outbuf, "%s hits you for %d damage!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(s)peak something\n\r\n", p->name, r, t->hp, t->powermove, p->name, p->hp);
+            sprintf(outbuf, "Your hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(s)peak something\n\r\n", t->hp, t->powermove, p->name, p->hp);
             write(t->fd, outbuf, strlen(outbuf));
           }
+	  if (switchrole == 1){ // If true, players will not switch roles (attacker and defender role)
+	    return;
+	  }
           p->state = 2;
           t->state = 3;
 }
 
-void endofmatch(struct client *p, int r){ // A helper function that takes care of the end of match cleanup
+void endofmatch(struct client *p){ // A helper function that takes care of the end of match cleanup
 	char outbuf[512];
 	struct client *t = p->opponent;
 	//print end message
-	sprintf(outbuf, "You hit %s for %d damage!\n%s gives up. You win!\n\nAwaiting next opponent...\n\r\n", t->name, r, t->name);
+	sprintf(outbuf, "%s gives up. You win!\n\nAwaiting next opponent...\n\r\n", t->name);
 	write(p->fd, outbuf, strlen(outbuf));
 
-        sprintf(outbuf, "%s hits you for %d damage!\nYou are no match for %s. You scurry away...\n\nAwaiting next opponent...\n\r\n", p->name, r, p->name);
+        sprintf(outbuf, "You are no match for %s. You scurry away...\n\nAwaiting next opponent...\n\r\n", p->name);
         write(t->fd, outbuf, strlen(outbuf));
         // set previously matched opponents
         p->prev = t->fd;
@@ -81,21 +97,33 @@ int handleclient(struct client *p) {
     char buf[256]; // Buffer to store input from the client.
     char outbuf[512]; // Buffer to construct output messages to be sent to clients.
     int len = read(p->fd, buf, sizeof(buf) - 1); // Read input from the client's socket into buf, limiting read size to one less than buffer size to leave space for null terminator.
- 
+
     if (len > 0) { // If the read is successful and data is received:
       buf[len] = '\0'; // Null-terminate the received input and make it a valid C string.
 
       if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent | If the 'say' flag is set (indicating the client is in a "speak" state)...
-          write(p->opponent->fd, buf, strlen(buf)); // Send received message directly to the opponent.
-          p->say = 0; // Reset the 'say' flag.
-          return 1; // Exit the function, indicating success. 
+          if (strcmp(buf, "\n") != 0) { // Client is not done typing a message
+	    strcat(canonbuf, buf);
+	    return 1;
+	  }
+	  sprintf(outbuf, "\nYou got a message from %s!\n", p->name);
+	  write(p->opponent->fd, outbuf, strlen(outbuf));
+	  strcat(canonbuf, "\n"); // For readability
+	  write(p->opponent->fd, canonbuf, strlen(canonbuf)); // Send received message directly to the opponent.
+          strcpy(canonbuf, ""); // Reset the canonical buffer
+	  p->say = 0; // Reset the 'say' flag.
+	  instructions(p->opponent, 1); // Print instructions again without switching roles
+          return 1; // Exit the function, indicating success.
       }
 
-
-
       if ((p->state) == 0) {  //if this client hasnt typed name yet, input becomes name and change state to 1. Open a match if possible.
-        p->name = strdup(buf); // Copies buffer's contents to a new memory location that doesn't get overwritten 
-        p->state = 1;
+	if (strcmp(buf, "\n") != 0) { // Client has not finished typing their name
+	  strcat(canonbuf, buf);
+	  return 1;
+	}
+	p->name = strdup(canonbuf); // Copies buffer's contents to a new memory location that doesn't get overwritten
+	strcpy(canonbuf, ""); // Reset the canonical buffer
+	p->state = 1;
         sprintf(outbuf, "Welcome, %s! Awaiting opponent...\r\n", p->name);
         write(p->fd, outbuf, strlen(outbuf));
 
@@ -113,15 +141,16 @@ int handleclient(struct client *p) {
         if (strcmp(buf, "a") == 0) { // strcmp returns 0 if the strings are equal
           int r = 2 + rand() % 5;
           t->hp -= r;
-
+	  // Print damage message
+	  damagemessage(p, r);
           if (t->hp <= 0) {
-	    endofmatch(p, r);
+	    endofmatch(p);
             return 1;
           }
 
           //battle continues
-	  instructions(p, r);
-          return 1; 
+	  instructions(p, 0);
+          return 1;
         }
         else if (strcmp(buf, "p") == 0) {
           //if powermove == 0 ignore, else carry out the action, hit rate 50%, dmg = (2~6) * 3, if hp drops to 0 end match
@@ -130,19 +159,23 @@ int handleclient(struct client *p) {
 			if (rand() % 2) {
 				int dmg = 3 * (2 + rand() % 5);
 				t->hp -= dmg;
+				damagemessage(p, dmg);
 				if (t->hp <= 0) {
-					endofmatch(p, dmg);
+					endofmatch(p);
 					return 1;
 				}
-				instructions(p, dmg);
+				instructions(p, 0);
 				return 1;
 			}
 			// if missed send 0 as the damage
+			damagemessage(p, 0);
 			instructions(p, 0);
 			return 1;
 		}
         }
         else if (strcmp(buf, "s") == 0) {
+	  sprintf(outbuf, "\n\nPlease type the message you want to send.\nWhen you're finished, hit enter.\n");
+	  write(p->fd, outbuf, strlen(outbuf));
           //set say flag to 1.  
           p->say = 1;
           return 1;
@@ -159,7 +192,7 @@ int handleclient(struct client *p) {
             broadcast(first, outbuf, strlen(outbuf));
         }
         return -1;
-    } 
+    }
     return 0;
 }
 
@@ -367,7 +400,6 @@ int main(void) {
     struct sockaddr_in q;
     fd_set allset;
     fd_set rset;
-
     int i;
 
 
