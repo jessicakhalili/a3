@@ -140,7 +140,7 @@ int handleclient(struct client *p) {
       }
       else if ((p->state) == 3) {  //this client is in a battle, in offense, perform the action.
         struct client *t = p->opponent;
-        if (strcmp(buf, "a") == 0) { // strcmp returns 0 if the strings are equal
+        if (strcmp(buf, "a") == 0 || strcmp(buf, "a\n") == 0) { // strcmp returns 0 if the strings are equal
           int r = 2 + rand() % 5;
           t->hp -= r;
 	  // Print damage message
@@ -154,7 +154,7 @@ int handleclient(struct client *p) {
 	  instructions(p, 0);
           return 1;
         }
-        else if (strcmp(buf, "p") == 0) {
+        else if (strcmp(buf, "p") == 0 || strcmp(buf, "p\n") == 0) {
           //if powermove == 0 ignore, else carry out the action, hit rate 50%, dmg = (2~6) * 3, if hp drops to 0 end match
 		if ((p->powermove) > 0) {
 			p->powermove -= 1;
@@ -175,16 +175,16 @@ int handleclient(struct client *p) {
 			return 1;
 		}
         }
-        else if (strcmp(buf, "s") == 0) {
+        else if (strcmp(buf, "s") == 0 || strcmp(buf, "s\n") == 0) {
 	  sprintf(outbuf, "\n\nPlease type the message you want to send.\nWhen you're finished, hit enter.\n");
 	  write(p->fd, outbuf, strlen(outbuf));
-          //set say flag to 1.  
+          //set say flag to 1.
           p->say = 1;
           return 1;
         }
       }
       return 1;
-    } 
+    }
 
     else if (len <= 0) {
         // socket is closed
