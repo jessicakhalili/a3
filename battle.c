@@ -264,7 +264,9 @@ static void addclient(int fd, struct in_addr addr) {
 
 void removeclient(int fd) {
     struct client **p; // pointer to pointer for traversal and modification.
-
+    struct client *opponent;
+    int oppflag = 0;
+    char outbuf[512];
     // loop through the list to find the client with the matching file descriptor.
     for (p = &first; *p && (*p)->fd != fd; p = &(*p)->next);
 
@@ -272,6 +274,11 @@ void removeclient(int fd) {
     if (*p) {
         // special case handling is not required for the first element, it's covered by general logic.
         struct client *temp = *p; // temporarily store the pointer to the client to be removed.
+	// Check if the client is in a match
+	if ((*p)->state == 2 || (*p)->state == 3) {
+		opponent = (*p)->opponent;
+		oppflag = 1;
+	}
 
         // logging the removal action.
         printf("Removing client %d %s\n", fd, inet_ntoa(temp->ipaddr));
@@ -286,6 +293,14 @@ void removeclient(int fd) {
 
         // finally, free the client struct itself.
         free(temp);
+
+	// End the match for the opponent
+	if (oppflag == 1){
+		sprintf(outbuf, "\nYour opponent has fled the battlefield. Ending the match...\r\n");
+		write(opponent->fd, outbuf, strlen(outbuf));
+		movetoend(opponent->fd);
+		searchmatch(opponent);
+	}
     } else {
         // if the client with the specified file descriptor was not found in the list.
         fprintf(stderr, "Trying to remove fd %d, but I don't know about it\n", fd);
@@ -315,9 +330,10 @@ static void movetoend(int fd) {
 	  if (prev2 != p) { //if fd is the one and only client in the list, do nothing.
        	  //else, update the variable first and perform the task.
 	    struct client *tempfirst = ((*p)->next); // A temporary variable to hold the address of *p->next
-            struct client *t = *p;
+            struct client *templast = *prev2;
+	    struct client *t = *p;
             t->next = (*prev2)->next;
-            (*prev2)->next = t;
+            templast->next = t;
 	    first = tempfirst;
           }
         }
