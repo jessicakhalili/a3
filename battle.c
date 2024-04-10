@@ -356,11 +356,12 @@ static int searchmatch(struct client *p) {
                   p->opponent = p1;
                   p1->opponent = p;
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p1->name, p->hp, p->powermove, p1->name, p1->hp);
+                  sprintf(outbuf, "You engage %s!\r\n", p1->name);
                   write(p->fd, outbuf, strlen(outbuf));
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p->name, p1->hp, p1 ->powermove, p->name, p->hp, p->name);
+                  sprintf(outbuf, "You engage %s!\r\n", p->name);
                   write(p1->fd, outbuf, strlen(outbuf));
+		  instructions(p1, 1);
                   return 1;
                 }
                 else {
@@ -373,11 +374,12 @@ static int searchmatch(struct client *p) {
                   p->opponent = p1;
                   p1->opponent = p;
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\n\n(a)ttack\n(p)owermove\n(s)peak something\n\r\n", p->name, p1->hp, p1->powermove, p->name, p->hp);
+                  sprintf(outbuf, "You engage %s!\r\n", p->name);
                   write(p1->fd, outbuf, strlen(outbuf));
 
-                  sprintf(outbuf, "You engage %s!\nYour hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p1->name, p->hp, p ->powermove, p1->name, p1->hp, p1->name);
+                  sprintf(outbuf, "You engage %s!\r\n", p1->name);
                   write(p->fd, outbuf, strlen(outbuf));
+		  instructions(p, 1);
                   return 1;
                 }
             }
@@ -444,7 +446,7 @@ int main(void) {
         }
 
         for(i = 0; i <= maxfd; i++) {
-            if (FD_ISSET(i, &rset)) { 
+            if (FD_ISSET(i, &rset)) {
                 for (p = first; p != NULL; p = p->next) {
                     if (p->fd == i) {
                         int result = handleclient(p);  //all actions from the client will be taken care of in handle client function.
