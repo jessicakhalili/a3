@@ -102,13 +102,13 @@ int handleclient(struct client *p) {
       buf[len] = '\0'; // Null-terminate the received input and make it a valid C string.
 
       if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent | If the 'say' flag is set (indicating the client is in a "speak" state)...
-          if (strcmp(buf, "\n") != 0) { // Client is not done typing a message
+          if (strchr(buf, '\n') == NULL) { // Client is not done typing a message
 	    strcat(canonbuf, buf);
 	    return 1;
 	  }
+	  strcat(canonbuf, buf); // For readability
 	  sprintf(outbuf, "\nYou got a message from %s!\n", p->name);
 	  write(p->opponent->fd, outbuf, strlen(outbuf));
-	  strcat(canonbuf, "\n"); // For readability
 	  write(p->opponent->fd, canonbuf, strlen(canonbuf)); // Send received message directly to the opponent.
           strcpy(canonbuf, ""); // Reset the canonical buffer
 	  p->say = 0; // Reset the 'say' flag.
@@ -117,10 +117,12 @@ int handleclient(struct client *p) {
       }
 
       if ((p->state) == 0) {  //if this client hasnt typed name yet, input becomes name and change state to 1. Open a match if possible.
-	if (strcmp(buf, "\n") != 0) { // Client has not finished typing their name
+	if (strchr(buf, '\n') == NULL) { // Client has not finished typing their name
 	  strcat(canonbuf, buf);
 	  return 1;
 	}
+	*(strchr(buf, '\n')) = '\0';
+	strcat(canonbuf, buf);
 	p->name = strdup(canonbuf); // Copies buffer's contents to a new memory location that doesn't get overwritten
 	strcpy(canonbuf, ""); // Reset the canonical buffer
 	p->state = 1;
@@ -304,7 +306,7 @@ static void movetoend(int fd) {
         (*p)->powermove = 0;
         (*p)->opponent = NULL;
         if (p == &first) { //if fd is first position (special case)
-          
+
           struct client **p2;
           struct client **prev2;
           for (p2 = &first; *p2; p2 = &(*p2)->next) {
@@ -330,7 +332,7 @@ static void movetoend(int fd) {
           t->next = (*prev2)->next;
           (*prev2)->next = t;
         }
-    } 
+    }
     else {
         fprintf(stderr, "Trying to remove fd %d, but I don't know about it\n",
                  fd);
