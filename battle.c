@@ -46,10 +46,10 @@ void damagemessage(struct client *p, int r){ // A helper function that takes car
 	char outbuf[512];
 	struct client *t = p->opponent;
 	// Message the opponent
-	sprintf(outbuf, "\nYou hit %s for %d damage!\n", t->name, r);
+	sprintf(outbuf, "\nYou hit %s for %d damage!\r\n", t->name, r);
 	write(p->fd, outbuf, strlen(outbuf));
 	// Message the client
-	sprintf(outbuf, "%s hits you for %d damage!\n", p->name, r);
+	sprintf(outbuf, "%s hits you for %d damage!\r\n", p->name, r);
 	write(t->fd, outbuf, strlen(outbuf));
 }
 
@@ -107,7 +107,7 @@ int handleclient(struct client *p) {
 	    return 1;
 	  }
 	  strcat(canonbuf, buf); // For readability
-	  sprintf(outbuf, "\nYou got a message from %s!\n", p->name);
+	  sprintf(outbuf, "\nYou got a message from %s!\r\n", p->name);
 	  write(p->opponent->fd, outbuf, strlen(outbuf));
 	  write(p->opponent->fd, canonbuf, strlen(canonbuf)); // Send received message directly to the opponent.
           strcpy(canonbuf, ""); // Reset the canonical buffer
@@ -176,7 +176,7 @@ int handleclient(struct client *p) {
 		}
         }
         else if (strcmp(buf, "s") == 0 || strcmp(buf, "s\n") == 0) {
-	  sprintf(outbuf, "\n\nPlease type the message you want to send.\nWhen you're finished, hit enter.\n");
+	  sprintf(outbuf, "\n\nPlease type the message you want to send.\nWhen you're finished, hit enter.\r\n");
 	  write(p->fd, outbuf, strlen(outbuf));
           //set say flag to 1.
           p->say = 1;
@@ -314,10 +314,11 @@ static void movetoend(int fd) {
 	  }
 	  if (prev2 != p) { //if fd is the one and only client in the list, do nothing.
        	  //else, update the variable first and perform the task.
-            first = (*p)->next;
+	    struct client *tempfirst = ((*p)->next); // A temporary variable to hold the address of *p->next
             struct client *t = *p;
             t->next = (*prev2)->next;
             (*prev2)->next = t;
+	    first = tempfirst;
           }
         }
         else {  //for all other cases (including the case of 2 clients in list with fd being the second), perform the task.
