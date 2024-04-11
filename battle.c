@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <limits.h>
+#include <sys/time.h>
 
 #ifndef PORT
     #define PORT 58833
@@ -26,6 +28,7 @@ struct client {
   int prev;
   struct client *opponent;
   int say;
+  time_t last_action_time; // Timestamp for the start of the current action
 };
 
 static int searchmatch(struct client *p);
@@ -56,6 +59,10 @@ void damagemessage(struct client *p, int r){ // A helper function that takes car
 void instructions(struct client *p, int switchrole){ // A helper function that takes care of print instructions
 	  char outbuf[512];
 	  struct client *t = p->opponent;
+    // Update lastActionTime for the active player at the start of their turn
+    if (p->state == 3) {
+      time(&p->last_action_time);
+    }
           sprintf(outbuf, "Your hitpoints: %d\nYour powermoves: %d\n\n%s's hitpoints: %d\nWaiting for %s to strike...\r\n", p->hp, p ->powermove, t->name, t->hp, t->name);
           write(p->fd, outbuf, strlen(outbuf));
           if (t->powermove > 0) {
@@ -70,8 +77,14 @@ void instructions(struct client *p, int switchrole){ // A helper function that t
 	  if (switchrole == 1){ // If true, players will not switch roles (attacker and defender role)
 	    return;
 	  }
+    // Ensuring that the alarm is canceled if the player acts before the timeout
+    alarm(0); // Cancel any pending alarm as the player is about to act
           p->state = 2;
           t->state = 3;
+    // Only start a new turn timer for the opponent if the match is ongoing
+    if (p->hp > 0 && t->hp > 0) {
+      time(&t->last_action_time); // Update last_action_time for the opponent as their turn starts. 
+    }
 }
 
 void endofmatch(struct client *p){ // A helper function that takes care of the end of match cleanup
@@ -373,6 +386,10 @@ static int searchmatch(struct client *p) {
                   p->opponent = p1;
                   p1->opponent = p;
 
+                  // Update last_action_time for both players
+                  time(&p->last_action_time);
+                  time(&p1->last_action_time);
+
                   sprintf(outbuf, "You engage %s!\r\n", p1->name);
                   write(p->fd, outbuf, strlen(outbuf));
 
@@ -391,6 +408,9 @@ static int searchmatch(struct client *p) {
                   p->opponent = p1;
                   p1->opponent = p;
 
+                  // Update last_action_time for both players
+                  time(&p1->last_action_time);
+                  time(&p->last_action_time);
                   sprintf(outbuf, "You engage %s!\r\n", p->name);
                   write(p1->fd, outbuf, strlen(outbuf));
 
@@ -436,11 +456,46 @@ int main(void) {
     maxfd = listenfd;
 
     while (1) {
+        FD_ZERO(&rset);
         // make a copy of the set before we pass it into select
         rset = allset;
 
+        struct timeval tv;
+        long shortest_time_remaining = LONG_MAX;
+        time_t current_time = time(NULL);
+
+        // Configure the timeout for select based on the shortest time remaining
+        if (shortest_time_remaining == LONG_MAX){
+          tv.tv_sec = 30;
+          tv.tv_usec = 0;
+        } else {
+          tv.tv_sec = shortest_time_remaining <= 0 ? 0 : shortest_time_remaining;
+          tv.tv_usec = 0;
+        }
+
         nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
 
+        // Handle select return: check for timeout or ready sockets
+        if (nready == 0) {
+          // Timeout occurred, find and process the client whose action time expired
+          current_time = time(NULL);
+          for (struct client *p = first; p != NULL; p = p->next) {
+            if (p->state == 3 && (current_time - p->last_action_time) >= 30) {
+              // Timeout handling: inform the player, skip their turn. 
+              char *timeoutmsg = "Timeout! Your turn was skipped.\n";
+              char *message = "Timeout! Your turn was skipped.\n"; // Proper declaration and initialization
+              write(p->fd, timeoutmsg, strlen(timeoutmsg));
+              if (p->opponent != NULL) {
+                write(p->opponent->fd, message, strlen(message));
+                // Switch turn to the opponent
+                p->state = 2; // Make current player inactive
+                p->opponent->state = 3; // Make opponent active
+                time(&p->opponent->last_action_time); // Reset last_action_time for the opponent
+              }
+              break; // Since we found the player causing the timeout, no need to check further. 
+            }
+          }
+        }
         if (nready == -1) {
             perror("select");
             continue;
