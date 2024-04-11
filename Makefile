@@ -1,33 +1,48 @@
-# Compiler to use
-CC=gcc
+# Define the default port number
+PORT_DEFAULT = 58833
+
+# Set the port number to the default value if not provided
+PORT ?= $(PORT_DEFAULT)
 
 # Compiler flags
-CFLAGS=-g -Wall
-
-# Port number for the server to listen on
-PORT=58833
-
-# Name of your final executable
-TARGET=battle
+CFLAGS = -DPORT=$(PORT) -g -Wall
 
 # Source files
-SRC=battle.c
+SRCS = battle.c
 
 # Object files
-OBJ=$(SRC:.c=.o)
+OBJS = $(SRCS:.c=.o)
+
+# Dependency files
+DEPS = $(SRCS:.c=.d)
+
+# Compiler
+CC = gcc
+
+# Target executable
+TARGET = battle
+
+# Phony targets
+.PHONY: all clean
 
 # Default target
 all: $(TARGET)
 
-$(TARGET): $(OBJ)
-	$(CC) $(CFLAGS) -DPORT=$(PORT) -o $@ $^
+# Linking object files to generate the executable
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
 
-# Compile .c to .o
+# Compilation rule for C source files
 %.o: %.c
-	$(CC) $(CFLAGS) -DPORT=$(PORT) -c $<
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Include dependency files
+-include $(DEPS)
+
+# Generate dependency files
+%.d: %.c
+	$(CC) $(CFLAGS) -MM $< -MF $@ -MT '$(basename $@).o $@'
 
 # Clean target
 clean:
-	rm -f $(TARGET) $(OBJ)
-
-.PHONY: all clean
+	rm -f $(TARGET) $(OBJS) $(DEPS)
