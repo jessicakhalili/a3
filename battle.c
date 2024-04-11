@@ -60,9 +60,11 @@ void handle_alarm(int sig) {
 }
 
 void start_turn_timer(struct client *p) {
+  if (p->hp > 0 && p->opponent->hp > 0) {
     signal(SIGALRM, handle_alarm);
     alarm(30); // start a 30-second timer
     instructions(p, 0); // print instructions and set player's state to 3 (attacker)
+  }
 }
 
 void attack(struct client *p, int damage) {
@@ -74,7 +76,7 @@ void attack(struct client *p, int damage) {
     }
     else {
         // if the opponent is still alive, start their turn
-        start_turn(p->opponent);
+        start_turn_timer(p->opponent);
     } 
 }
 
@@ -108,7 +110,10 @@ void instructions(struct client *p, int switchrole){ // A helper function that t
 	  }
           p->state = 2;
           t->state = 3;
-          start_turn_timer(p->opponent);
+          // Check if either player has no hitpoints left before starting the opponent's turn
+          if (p->hp > 0 && p->opponent->hp > 0) {
+            start_turn_timer(p->opponent);
+          }
 }
 
 void endofmatch(struct client *p){ // A helper function that takes care of the end of match cleanup
