@@ -1,26 +1,11 @@
-# Makefile for compiling battle.c
-CC = gcc
-CFLAGS = -Wall -g
-LDFLAGS =
-PORT = 58833
+CC=gcc
+CFLAGS=-g -Wall -DPORT=$(PORT)
+PORT=58833
 
-# Executable file name
-TARGET=battle
+all: battle
 
-# Source and object files
-SRC = battle.c
-OBJ = $(SRC:.c=.o)
+battle: battle.c
+    $(CC) $(CFLAGS) -o battle battle.c
 
-# Rule to make target
-$(TARGET): $(OBJ)
-    $(CC) $(CFLAGS) -o $(TARGET) $(OBJ) $(LDFLAGS)
-
-# Rule for object files
-%.o: %.c
-    $(CC) $(CFLAGS) -DPORT=$(PORT) -c $< -o $@
-
-# Clean files
 clean:
-    rm -f $(TARGET) $(OBJ)
-
-.PHONY: clean
+    rm -f battle

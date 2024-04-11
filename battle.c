@@ -67,19 +67,6 @@ void start_turn_timer(struct client *p) {
   }
 }
 
-void attack(struct client *p, int damage) {
-    alarm(0); // cancel the timer if the player attacks within the time limit
-    damagemessage(p, damage); // send damage message
-    // check if the opponent's hitpoints are 0 or less, if so, end the match
-    if (p->opponent->hp <= 0) {
-        endofmatch(p);
-    }
-    else {
-        // if the opponent is still alive, start their turn
-        start_turn_timer(p->opponent);
-    } 
-}
-
 void damagemessage(struct client *p, int r){ // A helper function that takes care of damage instructions
 	char outbuf[512];
 	struct client *t = p->opponent;
