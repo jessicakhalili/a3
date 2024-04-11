@@ -299,6 +299,8 @@ void removeclient(int fd) {
         // advance the pointer to remove the current client from the list.
         *p = temp->next;
 
+	strcpy(temp->name, "");
+
         // finally, free the client struct itself.
         free(temp);
 
