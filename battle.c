@@ -22,12 +22,13 @@ struct client {
   struct in_addr ipaddr;
   struct client *next;
   int state; //0:waiting name 1:name typed, waiting match 2:non-active 3:active
-  char* name;
+  char name[21];
   int hp;
   int powermove;
   int prev;
   struct client *opponent;
   int say;
+  char message[65];
   time_t last_action_time; // Timestamp for the start of the current action
 };
 
@@ -43,7 +44,6 @@ int bindandlisten(void);
 
 // Global Variables, fix names carefully
 struct client *first = NULL;
-char canonbuf[64] = ""; // Buffer for commands that require canonical mode
 
 void damagemessage(struct client *p, int r){ // A helper function that takes care of damage instructions
 	char outbuf[512];
@@ -77,8 +77,6 @@ void instructions(struct client *p, int switchrole){ // A helper function that t
 	  if (switchrole == 1){ // If true, players will not switch roles (attacker and defender role)
 	    return;
 	  }
-    // Ensuring that the alarm is canceled if the player acts before the timeout
-    alarm(0); // Cancel any pending alarm as the player is about to act
           p->state = 2;
           t->state = 3;
     // Only start a new turn timer for the opponent if the match is ongoing
@@ -116,14 +114,17 @@ int handleclient(struct client *p) {
 
       if (p->say == 1) { //priority check: if say flag is 1, print msg to opponent | If the 'say' flag is set (indicating the client is in a "speak" state)...
           if (strchr(buf, '\n') == NULL) { // Client is not done typing a message
-	    strcat(canonbuf, buf);
+	    strcat(p->message, buf);
 	    return 1;
 	  }
-	  strcat(canonbuf, buf); // For readability
+	  strcat(p->message, buf); // For readability
+	  (p->message)[64] = '\n';
+	  sprintf(outbuf, "Your message has been sent to %s!\r\n\n", p->opponent->name);
+	  write(p->fd, outbuf, strlen(outbuf));
 	  sprintf(outbuf, "\nYou got a message from %s!\r\n", p->name);
 	  write(p->opponent->fd, outbuf, strlen(outbuf));
-	  write(p->opponent->fd, canonbuf, strlen(canonbuf)); // Send received message directly to the opponent.
-          strcpy(canonbuf, ""); // Reset the canonical buffer
+	  write(p->opponent->fd, p->message, strnlen(p->message, 65)); // Send received message directly to the opponent.
+          strcpy(p->message, ""); // Reset the canonical buffer
 	  p->say = 0; // Reset the 'say' flag.
 	  instructions(p->opponent, 1); // Print instructions again without switching roles
           return 1; // Exit the function, indicating success.
@@ -131,13 +132,12 @@ int handleclient(struct client *p) {
 
       if ((p->state) == 0) {  //if this client hasnt typed name yet, input becomes name and change state to 1. Open a match if possible.
 	if (strchr(buf, '\n') == NULL) { // Client has not finished typing their name
-	  strcat(canonbuf, buf);
+	  strcat(p->name, buf);
 	  return 1;
 	}
 	*(strchr(buf, '\n')) = '\0';
-	strcat(canonbuf, buf);
-	p->name = strdup(canonbuf); // Copies buffer's contents to a new memory location that doesn't get overwritten
-	strcpy(canonbuf, ""); // Reset the canonical buffer
+	strcat(p->name, buf);
+	(p->name)[20] = '\0';
 	p->state = 1;
         sprintf(outbuf, "Welcome, %s! Awaiting opponent...\r\n", p->name);
         write(p->fd, outbuf, strlen(outbuf));
@@ -298,11 +298,6 @@ void removeclient(int fd) {
 
         // advance the pointer to remove the current client from the list.
         *p = temp->next;
-
-        // free the removed client's dynamically allocated name, if applicable.
-        if (temp->name) {
-            free(temp->name);
-        }
 
         // finally, free the client struct itself.
         free(temp);
@@ -474,7 +469,6 @@ int main(void) {
           }
         }
 
-  
         // Set the select timeout
         if (shortest_time_remaining <= 0) {
           tv.tv_sec = 0; tv.tv_usec = 0;
@@ -492,16 +486,19 @@ int main(void) {
           current_time = time(NULL);
           for (struct client *p = first; p != NULL; p = p->next) {
             if (p->state == 3 && (current_time - p->last_action_time) >= 30) {
-              // Timeout handling: inform the player, skip their turn. 
-              char *timeoutmsg = "Timeout! Your turn was skipped.\n";
-              char *message = "Timeout! Your turn was skipped.\n"; // Proper declaration and initialization
+              // Timeout handling: inform the player, skip their turn.
+              char *timeoutmsg = "Timeout! Your turn was skipped.\n\n";
+              char *message = "Your opponent timed out! Their turn was skipped.\n\n"; // Proper declaration and initialization
               write(p->fd, timeoutmsg, strlen(timeoutmsg));
               if (p->opponent != NULL) {
                 write(p->opponent->fd, message, strlen(message));
                 // Switch turn to the opponent
                 p->state = 2; // Make current player inactive
+		p->say = 0; // Turn off speech
+		strcpy(p->message, "");
                 p->opponent->state = 3; // Make opponent active
                 time(&p->opponent->last_action_time); // Reset last_action_time for the opponent
+		instructions(p, 1);
               }
               break; // Since we found the player causing the timeout, no need to check further. 
             }
@@ -524,7 +521,7 @@ int main(void) {
                 maxfd = clientfd;
             }
             addclient(clientfd, q.sin_addr);
-            char *namemsg = "What is your name?\r\n";
+            char *namemsg = "What is your name? (20 character limit)\r\n";
             write(clientfd, namemsg, strlen(namemsg)); //Add client, print name message, and set client state to 0.
         }
 
