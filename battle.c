@@ -95,12 +95,13 @@ void instructions(struct client *p, int switchrole){ // A helper function that t
 	  if (switchrole == 1){ // If true, players will not switch roles (attacker and defender role)
 	    return;
 	  }
-          p->state = 2;
-          t->state = 3;
+    alarm(0); // cancel current alarm
+    p->state = 2;
+    t->state = 3;
           // Check if either player has no hitpoints left before starting the opponent's turn
-          if (p->hp > 0 && p->opponent->hp > 0) {
-            start_turn_timer(p->opponent);
-          }
+    if (p->hp > 0 && p->opponent->hp > 0 && p->opponent->state != 3) {
+      start_turn_timer(p->opponent);
+    }
 }
 
 void endofmatch(struct client *p){ // A helper function that takes care of the end of match cleanup
