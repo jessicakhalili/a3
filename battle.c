@@ -7,6 +7,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <signal.h>
 
 #ifndef PORT
     #define PORT 58833
@@ -42,6 +43,41 @@ int bindandlisten(void);
 struct client *first = NULL;
 char canonbuf[64] = ""; // Buffer for commands that require canonical mode
 
+void handle_alarm(int sig) {
+  struct client *p = first;
+  while (p != NULL) {
+    if (p->state == 3) { // active player
+      p->state = 2; // switch to non-active
+      char *message = "You took too long to attack. Your turn is skipped.\n";
+      write(p->fd, message, strlen(message));
+      if (p->opponent != NULL) {
+        write(p->opponent->fd, message, strlen(message));
+      }
+      break;
+    }
+    p = p->next;
+  }
+}
+
+void start_turn_timer(struct client *p) {
+    signal(SIGALRM, handle_alarm);
+    alarm(30); // start a 30-second timer
+    instructions(p, 0); // print instructions and set player's state to 3 (attacker)
+}
+
+void attack(struct client *p, int damage) {
+    alarm(0); // cancel the timer if the player attacks within the time limit
+    damagemessage(p, damage); // send damage message
+    // check if the opponent's hitpoints are 0 or less, if so, end the match
+    if (p->opponent->hp <= 0) {
+        endofmatch(p);
+    }
+    else {
+        // if the opponent is still alive, start their turn
+        start_turn(p->opponent);
+    } 
+}
+
 void damagemessage(struct client *p, int r){ // A helper function that takes care of damage instructions
 	char outbuf[512];
 	struct client *t = p->opponent;
@@ -72,6 +108,7 @@ void instructions(struct client *p, int switchrole){ // A helper function that t
 	  }
           p->state = 2;
           t->state = 3;
+          start_turn_timer(p->opponent);
 }
 
 void endofmatch(struct client *p){ // A helper function that takes care of the end of match cleanup
