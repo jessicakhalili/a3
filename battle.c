@@ -456,24 +456,35 @@ int main(void) {
     maxfd = listenfd;
 
     while (1) {
-        FD_ZERO(&rset);
         // make a copy of the set before we pass it into select
         rset = allset;
 
         struct timeval tv;
         long shortest_time_remaining = LONG_MAX;
-        time_t current_time = time(NULL);
+        time_t current_time;
+        time(&current_time);
 
-        // Configure the timeout for select based on the shortest time remaining
-        if (shortest_time_remaining == LONG_MAX){
-          tv.tv_sec = 30;
-          tv.tv_usec = 0;
-        } else {
-          tv.tv_sec = shortest_time_remaining <= 0 ? 0 : shortest_time_remaining;
-          tv.tv_usec = 0;
+        // Calculate the shortest timeout for all active clients
+        for (p = first; p != NULL; p = p->next) {
+          if (p->state == 3) {
+            long time_remaining = 30 - (current_time - p->last_action_time);
+            if (time_remaining < shortest_time_remaining) {
+              shortest_time_remaining = time_remaining;
+            }
+          }
         }
 
-        nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
+  
+        // Set the select timeout
+        if (shortest_time_remaining <= 0) {
+          tv.tv_sec = 0; tv.tv_usec = 0;
+        } else if (shortest_time_remaining != LONG_MAX) {
+          tv.tv_sec = shortest_time_remaining; tv.tv_usec = 0;
+        } else {
+          tv.tv_sec = 30; tv.tv_usec = 0; // Default timeout when no active timers
+        }
+
+        nready = select(maxfd + 1, &rset, NULL, NULL, &tv);
 
         // Handle select return: check for timeout or ready sockets
         if (nready == 0) {
